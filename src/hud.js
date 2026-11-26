@@ -278,7 +278,161 @@ export function missionAtPoint(x, y, width, height) {
   return null;
 }
 
-export function drawTitle(ctx, width, height, bestByMission, selected) {
+// Menu rows on the title screen: CONTROL opens the tidy controls panel,
+// MODE opens the mission rows. Same geometry as the mission rows, so the
+// two views feel like one menu.
+export function titleMenuRows(width, height) {
+  const rows = [];
+  let y = height * 0.3 + 176;
+  for (const id of ['control', 'mode']) {
+    rows.push({ id, x: width / 2 - 350, y, w: 700, h: 50 });
+    y += 58;
+  }
+  return rows;
+}
+
+export function menuRowAtPoint(x, y, width, height) {
+  for (const row of titleMenuRows(width, height)) {
+    if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) return row.id;
+  }
+  return null;
+}
+
+const MENU_ITEMS = [
+  { id: 'control', key: '1', name: 'CONTROL', goal: 'Keyboard & mouse — how to fly', detail: 'Keys, mouse stick, throttle, views, pause' },
+  { id: 'mode', key: '2', name: 'MODE', goal: 'Pick a mission to fly', detail: 'Rings · Time Trial · Precision Landing' },
+];
+
+// One select row (menu row or mission row): gold key badge, name + goal on
+// one line, scoring detail underneath, optional right-aligned best score.
+function drawSelectRow(ctx, row, item, chosen, bestText) {
+  ctx.save();
+  ctx.fillStyle = chosen ? 'rgba(255, 209, 102, 0.16)' : 'rgba(255, 255, 255, 0.07)';
+  ctx.beginPath();
+  ctx.roundRect(row.x, row.y, row.w, row.h, 10);
+  ctx.fill();
+  if (chosen) {
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  // Key badge.
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.roundRect(row.x + 10, row.y + 8, 34, 34, 7);
+  ctx.fill();
+  ctx.fillStyle = '#1a1408';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(item.key, row.x + 27, row.y + 26);
+  // Name + goal on one line, scoring detail underneath.
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(item.name, row.x + 56, row.y + 19);
+  const nameW = ctx.measureText(item.name).width;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.font = '13px sans-serif';
+  ctx.fillText(`— ${item.goal}`, row.x + 56 + nameW + 8, row.y + 19);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(item.detail, row.x + 56, row.y + 38);
+  // Best score, right-aligned (mission rows only).
+  if (bestText) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(bestText, row.x + row.w - 14, row.y + 19);
+  }
+  ctx.restore();
+}
+
+function sectionLabel(ctx, width, height, text) {
+  ctx.save();
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, width / 2 - 350, height * 0.3 + 146);
+  ctx.restore();
+}
+
+// One gold key badge + label, left-aligned. Returns the badge width so the
+// label sits right after it; badges line up in a grid instead of the old
+// centred lines separated by hand-typed spaces.
+function keyBadge(ctx, x, y, key, h) {
+  ctx.save();
+  ctx.font = 'bold 15px sans-serif';
+  const w = Math.max(36, ctx.measureText(key).width + 18);
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 7);
+  ctx.fill();
+  ctx.fillStyle = '#1a1408';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(key, x + w / 2, y + h / 2 + 1);
+  ctx.restore();
+  return w;
+}
+
+function controlEntry(ctx, x, y, key, label) {
+  const w = keyBadge(ctx, x, y, key, 30);
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '15px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w + 10, y + 16);
+  ctx.restore();
+}
+
+// The tidy controls panel: groups with gold headers, two columns of
+// badge + label entries, tip line small and dim underneath.
+const CONTROL_GROUPS = [
+  { title: 'FLY', rows: [[['↑ ↓', 'pitch'], ['← →', 'bank & turn']]] },
+  { title: 'THROTTLE', rows: [[['SHIFT', 'throttle up'], ['CTRL', 'throttle down']]] },
+  {
+    title: 'VIEW & SYSTEM',
+    rows: [
+      [['MOUSE', 'steers like a stick'], ['V', 'cockpit / chase view']],
+      [['P', 'pause'], ['R', 'restart']],
+    ],
+  },
+];
+
+function drawControlGrid(ctx, width, height) {
+  const x0 = width / 2 - 386;
+  const x1 = width / 2 + 8;
+  let y = height * 0.3 + 86;
+  for (const group of CONTROL_GROUPS) {
+    ctx.save();
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(group.title, x0, y);
+    ctx.restore();
+    y += 18;
+    for (const row of group.rows) {
+      if (row[0]) controlEntry(ctx, x0, y, row[0][0], row[0][1]);
+      if (row[1]) controlEntry(ctx, x1, y, row[1][0], row[1][1]);
+      y += 38;
+    }
+    y += 12;
+  }
+  // Tip line, small and dim, separated from the controls.
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Watch your fuel — empty tanks mean a glide, and the sea is not a runway.', width / 2, y + 8);
+  ctx.restore();
+}
+
+export function drawTitle(ctx, width, height, bestByMission, selected, titleView, menuSel) {
   const bests = bestByMission || { rings: 0, time: 0, precision: 0 };
   const chosen = selected || 'rings';
   ctx.save();
@@ -302,67 +456,37 @@ export function drawTitle(ctx, width, height, bestByMission, selected) {
   ctx.fillStyle = '#ffffff';
   ctx.font = '20px sans-serif';
   ctx.fillText('Fly all 8 rings over the islands — then land on runway 36', width / 2, height * 0.3 + 40);
-  ctx.font = '16px sans-serif';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-  const lines = [
-    '↑ ↓ pitch      ← → bank & turn      SHIFT throttle up      CTRL throttle down',
-    'Mouse steers like a stick      V cockpit / chase view      P pause      R restart',
-    'Watch your fuel — empty tanks mean a glide, and the sea is not a runway.',
-  ];
-  let y = height * 0.3 + 92;
-  for (const line of lines) {
-    ctx.fillText(line, width / 2, y);
-    y += 28;
-  }
-  // Mission select: keys 1/2/3 or click a row to fly that mission.
-  for (const row of titleMissionRows(width, height)) {
-    const m = MISSIONS[row.id];
-    const isChosen = row.id === chosen;
-    ctx.save();
-    ctx.fillStyle = isChosen ? 'rgba(255, 209, 102, 0.16)' : 'rgba(255, 255, 255, 0.07)';
-    ctx.beginPath();
-    ctx.roundRect(row.x, row.y, row.w, row.h, 10);
-    ctx.fill();
-    if (isChosen) {
-      ctx.strokeStyle = '#ffd166';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+  const view = titleView || 'menu';
+  const menuChosen = menuSel || 0;
+  const blink = 0.65 + 0.35 * Math.sin(Date.now() / 350);
+  let hint = '';
+  if (view === 'control') {
+    // The tidy controls panel: grouped key-badge grid, tip line dim below.
+    drawControlGrid(ctx, width, height);
+    hint = 'ESC — BACK TO MENU';
+  } else if (view === 'mode') {
+    // Mission select: keys 1/2/3 open this view, arrows move, Enter flies.
+    sectionLabel(ctx, width, height, 'CHOOSE A MODE');
+    for (const row of titleMissionRows(width, height)) {
+      const m = MISSIONS[row.id];
+      const isChosen = row.id === chosen;
+      const best = bests[row.id] || 0;
+      drawSelectRow(ctx, row, m, isChosen, best > 0 ? `BEST ${best.toLocaleString('en-US')}` : 'BEST —');
     }
-    // Key badge.
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath();
-    ctx.roundRect(row.x + 10, row.y + 8, 34, 34, 7);
-    ctx.fill();
-    ctx.fillStyle = '#1a1408';
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(m.key, row.x + 27, row.y + 26);
-    // Name + goal on one line, scoring detail underneath.
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.fillText(m.name, row.x + 56, row.y + 19);
-    const nameW = ctx.measureText(m.name).width;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.font = '13px sans-serif';
-    ctx.fillText(`— ${m.goal}`, row.x + 56 + nameW + 8, row.y + 19);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.font = '12px sans-serif';
-    ctx.fillText(m.detail, row.x + 56, row.y + 38);
-    // Best score, right-aligned.
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#ffd166';
-    ctx.font = 'bold 14px sans-serif';
-    const best = bests[row.id] || 0;
-    ctx.fillText(best > 0 ? `BEST ${best.toLocaleString('en-US')}` : 'BEST —', row.x + row.w - 14, row.y + 19);
-    ctx.restore();
+    hint = 'CLICK A MISSION OR PRESS ENTER TO FLY';
+  } else {
+    // Numbered main menu: 1 CONTROL opens the controls, 2 MODE the missions.
+    sectionLabel(ctx, width, height, 'MAIN MENU');
+    const rows = titleMenuRows(width, height);
+    for (let i = 0; i < MENU_ITEMS.length; i += 1) {
+      drawSelectRow(ctx, rows[i], MENU_ITEMS[i], i === menuChosen, null);
+    }
+    hint = '↑ ↓ SELECT — ENTER TO OPEN';
   }
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 22px sans-serif';
-  const blink = 0.65 + 0.35 * Math.sin(Date.now() / 350);
   ctx.globalAlpha = blink;
-  ctx.fillText('CLICK A MISSION OR PRESS ENTER TO FLY', width / 2, height * 0.3 + 388);
+  ctx.fillText(hint, width / 2, height * 0.3 + 388);
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 15px sans-serif';

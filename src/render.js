@@ -294,7 +294,7 @@ export function createRenderer(canvas) {
         else drawHUD(octx, width, height, plane, world, time, fps, project);
       }
       if (screen === SCREEN_TITLE) {
-        drawTitle(octx, width, height, best.byMission, best.selected);
+        drawTitle(octx, width, height, best.byMission, best.selected, best.titleView, best.menuSel);
       } else if (screen === SCREEN_PAUSED) {
         drawOverlay(octx, width, height, 'PAUSED', ['P or Esc to keep flying', 'R to start over'], '#7ddbff');
       } else if (screen === SCREEN_OVER) {

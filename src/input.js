@@ -8,13 +8,26 @@ export const ACTION_VIEW = 'view';
 
 export function createInput(canvas) {
   const keys = new Set();
+  // Edge queue: one-shot presses are recorded here at event time, because
+  // a quick press can land entirely between two frames (at ~10 FPS under
+  // software rendering a keydown+keyup pair is regularly missed by code
+  // that only polls the held-key set). navKey/missionKey consume from this
+  // queue, so no press is ever lost. Only one-shot keys are queued.
+  const queue = [];
+  const ONE_SHOT = new Set(['1', '2', '3', 'ArrowUp', 'ArrowDown', 'Enter', ' ', 'Escape', 'w', 's']);
   const mouse = { active: false, x: 0, y: 0 };
 
   function onKeyDown(event) {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
       event.preventDefault();
     }
-    keys.add(event.key.length === 1 ? event.key.toLowerCase() : event.key);
+    const name = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    // Edge only: auto-repeat while held must not queue again.
+    if (!keys.has(name) && ONE_SHOT.has(name)) {
+      queue.push(name);
+      if (queue.length > 32) queue.shift();
+    }
+    keys.add(name);
   }
   function onKeyUp(event) {
     keys.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key);
@@ -70,13 +83,27 @@ export function createInput(canvas) {
       if (pressed('v', 'V')) return ACTION_VIEW;
       return null;
     },
-    /** Mission select on the title screen: keys 1/2/3, consumed when read. */
+    /** Mission select on the title screen: keys 1/2/3, consumed when read.
+     * Reads the edge queue, so a quick press is never lost between frames. */
     missionKey() {
-      for (const key of ['1', '2', '3']) {
-        if (keys.has(key)) {
-          keys.delete(key);
-          return key;
+      for (let i = 0; i < queue.length; i += 1) {
+        if (queue[i] === '1' || queue[i] === '2' || queue[i] === '3') {
+          return queue.splice(i, 1)[0];
         }
+      }
+      return null;
+    },
+    /** Title-menu navigation, edge-triggered: each press fires once even
+     * when the key is held, so Enter cannot skip a menu level. Up/down
+     * move the highlight, Enter opens/selects, Escape goes back. Reads the
+     * edge queue, so a quick press is never lost between frames. */
+    navKey() {
+      const map = {
+        ArrowUp: 'up', w: 'up', ArrowDown: 'down', s: 'down',
+        Enter: 'confirm', ' ': 'confirm', Escape: 'back',
+      };
+      for (let i = 0; i < queue.length; i += 1) {
+        if (map[queue[i]]) return map[queue.splice(i, 1)[0]];
       }
       return null;
     },

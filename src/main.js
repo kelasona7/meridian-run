@@ -7,14 +7,14 @@
 // stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
 import { BEST_KEY, STEP } from './config.js';
-import { MISSIONS, missionByKey } from './missions.js';
+import { MISSIONS, MISSION_ORDER, missionByKey } from './missions.js';
 import { createRandom } from './random.js';
 import { createWorld } from './world.js';
 import { createLandmarks } from './landmarks.js';
 import { createPlane, EVENT_CRASH, EVENT_LANDED, EVENT_RING } from './plane.js';
 import { ACTION_CONFIRM, ACTION_PAUSE, ACTION_RESTART, ACTION_VIEW, createInput } from './input.js';
 import { createAudio } from './audio.js';
-import { missionAtPoint } from './hud.js';
+import { menuRowAtPoint, missionAtPoint } from './hud.js';
 import {
   SCREEN_LANDED,
   SCREEN_OVER,
@@ -55,7 +55,7 @@ function runShot(name) {
   const scene = stageShot(name, world, plane, missionParam);
   let painted = 0;
   function paint() {
-    renderer.draw({ plane, world }, scene.screen, { byMission: { rings: 0, time: 0, precision: 0 }, selected: 'rings' }, plane.time, STEP);
+    renderer.draw({ plane, world }, scene.screen, { byMission: { rings: 0, time: 0, precision: 0 }, selected: 'rings', titleView: 'menu', menuSel: 0 }, plane.time, STEP);
     painted += 1;
     if (painted < 2) requestAnimationFrame(paint);
     else window.__shotReady = true;
@@ -94,6 +94,11 @@ function runGame() {
     precision: readBest('precision'),
   };
   let mission = 'rings';
+  // Title menu state: 'menu' (1 CONTROL / 2 MODE), 'control' (tidy key
+  // grid), 'mode' (the three mission rows). Highlight defaults to CONTROL.
+  let titleView = 'menu';
+  let menuSel = 0;
+  window.__meridian.getTitle = () => ({ view: titleView, menuSel, mission });
   let accumulator = 0;
   let last = performance.now();
   let simTime = 0;
@@ -112,24 +117,49 @@ function runGame() {
     last = now;
     simTime += frameSeconds;
 
-    const action = input.action();
-    // Mission select on the title screen: keys 1/2/3 start that mission.
-    const picked = input.missionKey();
-    if (picked && screen === SCREEN_TITLE) {
-      const missionId = missionByKey(picked);
-      if (missionId) startFlying(missionId);
-    }
-    if (action === ACTION_CONFIRM) {
-      if (screen === SCREEN_TITLE) startFlying();
-      else if (screen === SCREEN_OVER || screen === SCREEN_LANDED) startFlying();
-      audio.unlock();
-    } else if (action === ACTION_PAUSE) {
-      if (screen === SCREEN_PLAY) screen = SCREEN_PAUSED;
-      else if (screen === SCREEN_PAUSED) screen = SCREEN_PLAY;
-    } else if (action === ACTION_RESTART) {
-      if (screen !== SCREEN_TITLE) startFlying();
-    } else if (action === ACTION_VIEW) {
-      renderer.toggleView();
+    // Title screen: a numbered menu. Keys 1/2/3 open the MODE view with
+    // that mission selected; arrows move the highlight, Enter opens or
+    // flies, Esc goes back to the menu. Edge-triggered, so a held key
+    // cannot skip a menu level.
+    if (screen === SCREEN_TITLE) {
+      const picked = input.missionKey();
+      if (picked) {
+        const missionId = missionByKey(picked);
+        if (missionId) {
+          titleView = 'mode';
+          mission = missionId;
+        }
+      } else {
+        const nav = input.navKey();
+        if (nav === 'up' || nav === 'down') {
+          if (titleView === 'menu') menuSel = (menuSel + 1) % 2;
+          else if (titleView === 'mode') {
+            const i = MISSION_ORDER.indexOf(mission);
+            const step = nav === 'down' ? 1 : MISSION_ORDER.length - 1;
+            mission = MISSION_ORDER[(i + step) % MISSION_ORDER.length];
+          }
+        } else if (nav === 'confirm') {
+          if (titleView === 'menu') titleView = menuSel === 0 ? 'control' : 'mode';
+          else if (titleView === 'mode') startFlying(mission);
+          else titleView = 'menu';
+          audio.unlock();
+        } else if (nav === 'back') {
+          if (titleView !== 'menu') titleView = 'menu';
+        }
+      }
+    } else {
+      const action = input.action();
+      if (action === ACTION_CONFIRM) {
+        if (screen === SCREEN_OVER || screen === SCREEN_LANDED) startFlying();
+        audio.unlock();
+      } else if (action === ACTION_PAUSE) {
+        if (screen === SCREEN_PLAY) screen = SCREEN_PAUSED;
+        else if (screen === SCREEN_PAUSED) screen = SCREEN_PLAY;
+      } else if (action === ACTION_RESTART) {
+        if (screen !== SCREEN_TITLE) startFlying();
+      } else if (action === ACTION_VIEW) {
+        renderer.toggleView();
+      }
     }
 
     if (screen === SCREEN_PLAY) {
@@ -168,17 +198,25 @@ function runGame() {
       audio.update(plane.throttle, plane.speed, screen === SCREEN_PLAY);
     }
 
-    renderer.draw({ plane, world }, screen, { byMission: bestByMission, selected: mission }, simTime, frameSeconds);
+    renderer.draw({ plane, world }, screen, { byMission: bestByMission, selected: mission, titleView, menuSel }, simTime, frameSeconds);
     requestAnimationFrame(frame);
   }
 
   canvas.addEventListener('click', (event) => {
     audio.unlock();
     if (screen === SCREEN_TITLE) {
-      // A click on a mission row flies that mission; anywhere else flies
-      // the selected one.
-      const picked = missionAtPoint(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
-      startFlying(picked || mission);
+      if (titleView === 'menu') {
+        // A click on a menu row opens it; anywhere else does nothing.
+        const row = menuRowAtPoint(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
+        if (row === 'control') titleView = 'control';
+        else if (row === 'mode') titleView = 'mode';
+      } else if (titleView === 'mode') {
+        // A click on a mission row flies that mission; anywhere else flies
+        // the selected one.
+        const picked = missionAtPoint(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
+        startFlying(picked || mission);
+      }
+      // Control view: Esc (or Enter) goes back; clicks do nothing.
     } else if (screen === SCREEN_OVER || screen === SCREEN_LANDED) {
       startFlying();
     }
