@@ -490,7 +490,7 @@ export function drawTitle(ctx, width, height, bestByMission, selected, titleView
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 15px sans-serif';
-  ctx.fillText('60 FPS ENHANCED SCENERY EDITION', width / 2, height * 0.3 + 424);
+  ctx.fillText('EIGHT RINGS · ONE RUNWAY', width / 2, height * 0.3 + 424);
   ctx.font = '13px sans-serif';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
   ctx.fillText('An original game — Meridian Isles, runway 36, eight rings, one little island jet.', width / 2, height - 24);
