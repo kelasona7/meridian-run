@@ -70,6 +70,16 @@ export function createInput(canvas) {
       if (pressed('v', 'V')) return ACTION_VIEW;
       return null;
     },
+    /** Mission select on the title screen: keys 1/2/3, consumed when read. */
+    missionKey() {
+      for (const key of ['1', '2', '3']) {
+        if (keys.has(key)) {
+          keys.delete(key);
+          return key;
+        }
+      }
+      return null;
+    },
     mouse,
     dispose() {
       window.removeEventListener('keydown', onKeyDown);

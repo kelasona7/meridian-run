@@ -1,7 +1,8 @@
 // The flight model: an arcade plane with just enough discipline to matter.
 // Throttle sets the speed the engine wants; the wing only flies above stall
 // speed; bank turns the heading; fuel runs out and the glide begins.
-import { PLANE, RUNWAY, SPAWN } from './config.js';
+import { PLANE, PRECISION_SPAWN, RUNWAY, SPAWN } from './config.js';
+import { scorePrecisionLanding, scoreTimeTrial } from './missions.js';
 
 export const EVENT_NONE = 0;
 export const EVENT_RING = 1;
@@ -24,26 +25,34 @@ export function createPlane() {
     time: 0,
     score: 0,
     rings: 0,
+    mission: 'rings',
+    // Time trial: { time, bonus } once landed. Precision: touchdown data.
+    timeTrial: null,
+    touchdown: null,
     crashed: false,
     landed: false,
     crashReason: '',
     message: '',
     messageUntil: 0,
 
-    reset() {
-      this.x = SPAWN.x;
-      this.y = SPAWN.y;
-      this.z = SPAWN.z;
-      this.heading = SPAWN.heading;
+    reset(missionId) {
+      const spawn = missionId === 'precision' ? PRECISION_SPAWN : SPAWN;
+      this.mission = missionId || 'rings';
+      this.x = spawn.x;
+      this.y = spawn.y;
+      this.z = spawn.z;
+      this.heading = spawn.heading;
       this.pitch = 0;
       this.roll = 0;
-      this.speed = SPAWN.speed;
+      this.speed = spawn.speed;
       this.throttle = 0.62;
       this.fuel = PLANE.fuelCapacity;
       this.verticalSpeed = 0;
       this.time = 0;
       this.score = 0;
       this.rings = 0;
+      this.timeTrial = null;
+      this.touchdown = null;
       this.crashed = false;
       this.landed = false;
       this.crashReason = '';
@@ -106,15 +115,20 @@ export function createPlane() {
       this.x += forwardX * Math.cos(this.pitch) * this.speed * dt;
       this.z += forwardZ * Math.cos(this.pitch) * this.speed * dt;
 
-      // Ring check.
-      if (world.checkRing(this.x, this.y, this.z)) {
+      // Ring check. Precision landing has no rings: the whole mission is
+      // the descent. In time trial the rings are checkpoints, not points.
+      if (this.mission !== 'precision' && world.checkRing(this.x, this.y, this.z)) {
         this.rings += 1;
-        this.score += 1000;
         events |= EVENT_RING;
-        if (world.ringsLeft() === 0) {
-          this.say('COURSE COMPLETE — LAND ON RUNWAY 36', 5);
+        if (this.mission === 'time') {
+          this.say(`CHECKPOINT ${this.rings} OF 8`, 2);
         } else {
-          this.say(`RING ${this.rings} OF 8 — +1000`, 2);
+          this.score += 1000;
+          if (world.ringsLeft() === 0) {
+            this.say('COURSE COMPLETE — LAND ON RUNWAY 36', 5);
+          } else {
+            this.say(`RING ${this.rings} OF 8 — +1000`, 2);
+          }
         }
       }
 
@@ -131,7 +145,28 @@ export function createPlane() {
           if (aligned && gentle && slow) {
             this.y = RUNWAY.elevation + 0.5;
             this.landed = true;
-            this.score += 2500 + (world.ringsLeft() === 0 ? 1500 : 0);
+            if (this.mission === 'time') {
+              const result = scoreTimeTrial(this.time);
+              this.score = result.total;
+              this.timeTrial = { time: this.time, bonus: result.bonus };
+            } else if (this.mission === 'precision') {
+              // Heading error wrapped to -PI..PI: the approach crabs a
+              // little, so a raw heading near 2*PI is really near zero.
+              let headingError = this.heading % (Math.PI * 2);
+              if (headingError > Math.PI) headingError -= Math.PI * 2;
+              if (headingError < -Math.PI) headingError += Math.PI * 2;
+              const result = scorePrecisionLanding(this.x, this.z, this.verticalSpeed, headingError);
+              this.score = result.total;
+              this.touchdown = {
+                x: this.x,
+                z: this.z,
+                dist: result.dist,
+                vspeed: this.verticalSpeed,
+                headingError,
+              };
+            } else {
+              this.score += 2500 + (world.ringsLeft() === 0 ? 1500 : 0);
+            }
             return events | EVENT_LANDED;
           }
           this.crashed = true;

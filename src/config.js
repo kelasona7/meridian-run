@@ -34,6 +34,46 @@ export const SPAWN = {
   speed: 62,
 };
 
+// Precision landing spawns already on final approach, close in and low,
+// so the whole mission is one short, careful descent to the gold zone.
+export const PRECISION_SPAWN = {
+  x: 0,
+  y: 140,
+  z: 1200,
+  heading: 0, // facing north
+  speed: 55,
+};
+
+// The gold touchdown zone painted on runway 36: 24 m wide, 200 m long,
+// centred 200 m past the threshold — where a good glidepath touches down.
+export const TOUCHDOWN_ZONE = {
+  x: 0,
+  z: 200,
+  halfWidth: 12,
+  halfLength: 100,
+};
+
+// --- Mission scoring ---------------------------------------------------------
+// Time trial: same 8-ring course, scored on the clock, not the rings.
+// Rings are checkpoints worth nothing; the landing pays the base plus a
+// bonus for beating the 150 s par. Gold is under 120 s.
+export const TIME_TRIAL = {
+  base: 8000,
+  parSeconds: 150,
+  perSecond: 50,
+  goldSeconds: 120,
+  landing: 2500,
+};
+
+// Precision landing: one descent, scored on how close to the zone centre,
+// how gently, and how straight the touchdown is.
+export const PRECISION_SCORE = {
+  base: 10000,
+  perMetre: 20,
+  perMs: 200,
+  perRad: 1000,
+};
+
 export const RINGS = [
   { x: 0, y: 140, z: 900, r: 26 },
   { x: -420, y: 165, z: 320, r: 26 },

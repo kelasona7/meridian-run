@@ -4,6 +4,8 @@
 // same plane state drives both the chase view and the cockpit view.
 // `project` maps a world point to screen pixels (or null when behind the
 // camera) and comes from the Three.js camera in render.js.
+import { MISSIONS, MISSION_ORDER, formatClock } from './missions.js';
+import { TOUCHDOWN_ZONE } from './config.js';
 const TAU = Math.PI * 2;
 
 function clamp(v, lo, hi) {
@@ -107,6 +109,20 @@ export function drawHUD(ctx, width, height, plane, world, time, fps, project) {
   ctx.fillText(String(Math.round(headingDeg)).padStart(3, '0'), width / 2, 56);
   ctx.restore();
 
+  // Mission banner: the active mission and its objective, under the compass.
+  const mission = MISSIONS[plane.mission] || MISSIONS.rings;
+  const bannerText = `${mission.name} — ${mission.hudGoal}`;
+  ctx.save();
+  ctx.font = 'bold 13px sans-serif';
+  const bannerW = Math.min(760, ctx.measureText(bannerText).width + 28);
+  ctx.fillStyle = 'rgba(12, 18, 28, 0.62)';
+  ctx.fillRect(width / 2 - bannerW / 2, 66, bannerW, 24);
+  ctx.fillStyle = '#ffd166';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(bannerText, width / 2, 79);
+  ctx.restore();
+
   // Airspeed (left) and altitude (right): lit instruments.
   gauge(ctx, 74, 92, 52, 'AIRSPEED', `${knots} KT`, plane.speed / 96, '#7ddbff');
   gauge(ctx, width - 74, 92, 52, 'ALTITUDE', `${feet.toLocaleString('en-US')} FT`, clamp(plane.y / 420, 0, 1), '#ffd166');
@@ -173,19 +189,39 @@ export function drawHUD(ctx, width, height, plane, world, time, fps, project) {
   ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
   ctx.fillText(`${Math.round(plane.fuel)}%`, bx + 158, by + 58);
 
-  // Rings, time and score, bottom-right.
+  // Mission panel, bottom-right: what this mission scores on.
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(12, 18, 28, 0.62)';
   ctx.fillRect(width - 216, height - 118, 190, 96);
-  ctx.fillStyle = '#ffd166';
-  ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(`◉ RINGS ${plane.rings}/8`, width - 36, height - 88);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px sans-serif';
-  const mins = Math.floor(plane.time / 60);
-  const secs = Math.floor(plane.time % 60);
-  ctx.fillText(`TIME ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`, width - 36, height - 60);
-  ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, width - 36, height - 38);
+  if (plane.mission === 'time') {
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(`◷ ${formatClock(plane.time)}`, width - 36, height - 88);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('GOLD UNDER 2:00', width - 36, height - 60);
+    ctx.fillText(`CHECKPOINTS ${plane.rings}/8`, width - 36, height - 38);
+  } else if (plane.mission === 'precision') {
+    const dist = Math.hypot(plane.x - TOUCHDOWN_ZONE.x, plane.z - TOUCHDOWN_ZONE.z);
+    const vs = plane.verticalSpeed;
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(`◎ ZONE ${Math.round(dist)} m`, width - 36, height - 88);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(`${vs >= 0 ? '▲ CLIMB' : '▼ SINK'} ${Math.abs(vs).toFixed(1)} m/s`, width - 36, height - 60);
+    ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, width - 36, height - 38);
+  } else {
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(`◉ RINGS ${plane.rings}/8`, width - 36, height - 88);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    const mins = Math.floor(plane.time / 60);
+    const secs = Math.floor(plane.time % 60);
+    ctx.fillText(`TIME ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`, width - 36, height - 60);
+    ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, width - 36, height - 38);
+  }
 
   // Centre message.
   if (plane.time < plane.messageUntil && plane.message) {
@@ -199,8 +235,9 @@ export function drawHUD(ctx, width, height, plane, world, time, fps, project) {
     ctx.restore();
   }
 
-  // Next-ring arrow when the ring is off-screen.
-  const next = world.nextRing();
+  // Next-ring arrow when the ring is off-screen (ring missions only:
+  // precision landing has no rings to chase).
+  const next = plane.mission === 'precision' ? null : world.nextRing();
   if (next && project) {
     const p = project(next.x, next.y, next.z);
     if (p && (p.x < 0 || p.x > width || p.y < 0 || p.y > height)) {
@@ -222,13 +259,34 @@ export function drawHUD(ctx, width, height, plane, world, time, fps, project) {
   }
 }
 
-export function drawTitle(ctx, width, height, best) {
+// Mission rows on the title screen: one source of geometry for drawing
+// and for click hit-testing, so a click on a row always picks that mission.
+export function titleMissionRows(width, height) {
+  const rows = [];
+  let y = height * 0.3 + 176;
+  for (const id of MISSION_ORDER) {
+    rows.push({ id, x: width / 2 - 350, y, w: 700, h: 50 });
+    y += 58;
+  }
+  return rows;
+}
+
+export function missionAtPoint(x, y, width, height) {
+  for (const row of titleMissionRows(width, height)) {
+    if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) return row.id;
+  }
+  return null;
+}
+
+export function drawTitle(ctx, width, height, bestByMission, selected) {
+  const bests = bestByMission || { rings: 0, time: 0, precision: 0 };
+  const chosen = selected || 'rings';
   ctx.save();
   ctx.fillStyle = 'rgba(6, 18, 38, 0.72)';
   const panelX = width / 2 - 430;
   const panelY = height * 0.3 - 80;
   const panelW = 860;
-  const panelH = 370;
+  const panelH = 540;
   ctx.beginPath();
   ctx.roundRect(panelX, panelY, panelW, panelH, 18);
   ctx.fill();
@@ -256,20 +314,59 @@ export function drawTitle(ctx, width, height, best) {
     ctx.fillText(line, width / 2, y);
     y += 28;
   }
+  // Mission select: keys 1/2/3 or click a row to fly that mission.
+  for (const row of titleMissionRows(width, height)) {
+    const m = MISSIONS[row.id];
+    const isChosen = row.id === chosen;
+    ctx.save();
+    ctx.fillStyle = isChosen ? 'rgba(255, 209, 102, 0.16)' : 'rgba(255, 255, 255, 0.07)';
+    ctx.beginPath();
+    ctx.roundRect(row.x, row.y, row.w, row.h, 10);
+    ctx.fill();
+    if (isChosen) {
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Key badge.
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.roundRect(row.x + 10, row.y + 8, 34, 34, 7);
+    ctx.fill();
+    ctx.fillStyle = '#1a1408';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(m.key, row.x + 27, row.y + 26);
+    // Name + goal on one line, scoring detail underneath.
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(m.name, row.x + 56, row.y + 19);
+    const nameW = ctx.measureText(m.name).width;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.font = '13px sans-serif';
+    ctx.fillText(`— ${m.goal}`, row.x + 56 + nameW + 8, row.y + 19);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(m.detail, row.x + 56, row.y + 38);
+    // Best score, right-aligned.
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 14px sans-serif';
+    const best = bests[row.id] || 0;
+    ctx.fillText(best > 0 ? `BEST ${best.toLocaleString('en-US')}` : 'BEST —', row.x + row.w - 14, row.y + 19);
+    ctx.restore();
+  }
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 22px sans-serif';
   const blink = 0.65 + 0.35 * Math.sin(Date.now() / 350);
   ctx.globalAlpha = blink;
-  ctx.fillText('CLICK OR PRESS ENTER TO FLY', width / 2, y + 26);
+  ctx.fillText('CLICK A MISSION OR PRESS ENTER TO FLY', width / 2, height * 0.3 + 388);
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 15px sans-serif';
-  ctx.fillText('60 FPS ENHANCED SCENERY EDITION', width / 2, y + 62);
-  if (best > 0) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.font = '16px sans-serif';
-    ctx.fillText(`Best score: ${best.toLocaleString('en-US')}`, width / 2, y + 96);
-  }
+  ctx.fillText('60 FPS ENHANCED SCENERY EDITION', width / 2, height * 0.3 + 424);
   ctx.font = '13px sans-serif';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
   ctx.fillText('An original game — Meridian Isles, runway 36, eight rings, one little island jet.', width / 2, height - 24);

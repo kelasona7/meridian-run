@@ -8,6 +8,7 @@
 // The world is a bright blue day: a high sun, a blue sky, white puffy
 // clouds, and the lighthouse beam sweeping the water.
 import { RUNWAY, WORLD } from './config.js';
+import { MISSIONS, formatClock } from './missions.js';
 import { createWorld3d } from './world3d.js';
 import { createJet } from './jet.js';
 import { drawHUD, drawOverlay, drawTitle } from './hud.js';
@@ -275,7 +276,7 @@ export function createRenderer(canvas) {
       jet.updateThrottle(plane.throttle, time);
 
       updateCamera(plane, screen, time);
-      world3d.update(dt, time, world);
+      world3d.update(dt, time, world, plane.mission);
       updateParticles(dt);
       renderer.render(scene, camera);
 
@@ -293,19 +294,30 @@ export function createRenderer(canvas) {
         else drawHUD(octx, width, height, plane, world, time, fps, project);
       }
       if (screen === SCREEN_TITLE) {
-        drawTitle(octx, width, height, best);
+        drawTitle(octx, width, height, best.byMission, best.selected);
       } else if (screen === SCREEN_PAUSED) {
         drawOverlay(octx, width, height, 'PAUSED', ['P or Esc to keep flying', 'R to start over'], '#7ddbff');
       } else if (screen === SCREEN_OVER) {
+        const mission = MISSIONS[plane.mission] || MISSIONS.rings;
         drawOverlay(octx, width, height, 'CRASHED', [
           plane.crashReason || 'The flight is over.',
-          `Score: ${plane.score.toLocaleString('en-US')} — Rings: ${plane.rings}/8`,
+          `${mission.name} — Score: ${plane.score.toLocaleString('en-US')}`,
           'Press R to fly again',
         ], '#ff8a7a');
       } else if (screen === SCREEN_LANDED) {
+        const mission = MISSIONS[plane.mission] || MISSIONS.rings;
+        let detail;
+        if (plane.mission === 'time' && plane.timeTrial) {
+          const gold = plane.timeTrial.time < 120;
+          detail = `Time trial finished in ${formatClock(plane.timeTrial.time)} — ${gold ? 'GOLD! Under 2:00' : 'gold is under 2:00'} — bonus +${plane.timeTrial.bonus.toLocaleString('en-US')}`;
+        } else if (plane.mission === 'precision' && plane.touchdown) {
+          detail = `Touchdown ${plane.touchdown.dist} m from the zone centre — ${plane.touchdown.vspeed.toFixed(1)} m/s down`;
+        } else {
+          detail = `Score: ${plane.score.toLocaleString('en-US')} — Rings: ${plane.rings}/8 — Time: ${formatClock(plane.time)}`;
+        }
         drawOverlay(octx, width, height, 'TOUCHDOWN — RUNWAY 36', [
-          'A clean landing on the Meridian Isles strip.',
-          `Score: ${plane.score.toLocaleString('en-US')} — Rings: ${plane.rings}/8 — Time: ${Math.floor(plane.time / 60)}:${String(Math.floor(plane.time % 60)).padStart(2, '0')}`,
+          `${mission.name} — a clean landing on the Meridian Isles strip.`,
+          detail,
           'Press R to fly again',
         ], '#7ddb8a');
       }

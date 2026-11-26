@@ -5,6 +5,9 @@
 // state drives both the chase view and this one.
 const TAU = Math.PI * 2;
 
+import { formatClock } from './missions.js';
+import { TOUCHDOWN_ZONE } from './config.js';
+
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -262,18 +265,32 @@ export function drawCockpit(ctx, width, height, plane, world, time) {
     ctx.fillText('⚠ LOW FUEL', bx, by + 84);
   }
 
-  // Rings, time and score, between the attitude ball and the altimeter.
+  // Mission panel, between the attitude ball and the altimeter.
   const rx = width - 420;
   ctx.textAlign = 'right';
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(`◉ RINGS ${plane.rings}/8`, rx, by + 6);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px sans-serif';
-  const mins = Math.floor(plane.time / 60);
-  const secs = Math.floor(plane.time % 60);
-  ctx.fillText(`TIME ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`, rx, by + 30);
-  ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, rx, by + 54);
+  if (plane.mission === 'time') {
+    ctx.fillText(`◷ ${formatClock(plane.time)}`, rx, by + 6);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('GOLD UNDER 2:00', rx, by + 30);
+    ctx.fillText(`CHECKPOINTS ${plane.rings}/8`, rx, by + 54);
+  } else if (plane.mission === 'precision') {
+    const zoneDist = Math.hypot(plane.x - TOUCHDOWN_ZONE.x, plane.z - TOUCHDOWN_ZONE.z);
+    const vs = plane.verticalSpeed;
+    ctx.fillText(`◎ ZONE ${Math.round(zoneDist)} m`, rx, by + 6);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(`${vs >= 0 ? '▲ CLIMB' : '▼ SINK'} ${Math.abs(vs).toFixed(1)} m/s`, rx, by + 30);
+    ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, rx, by + 54);
+  } else {
+    ctx.fillText(`◉ RINGS ${plane.rings}/8`, rx, by + 6);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(`TIME ${formatClock(plane.time)}`, rx, by + 30);
+    ctx.fillText(`SCORE ${plane.score.toLocaleString('en-US')}`, rx, by + 54);
+  }
 
   // Centre message (ring passed, low fuel) above the panel.
   if (plane.time < plane.messageUntil && plane.message) {
@@ -288,7 +305,8 @@ export function drawCockpit(ctx, width, height, plane, world, time) {
   }
 
   // Off-screen next-ring chevron: point left or right along the panel top.
-  const next = world.nextRing();
+  // Ring missions only — precision landing has no rings to chase.
+  const next = plane.mission === 'precision' ? null : world.nextRing();
   if (next) {
     const bearing = Math.atan2(next.x - plane.x, -(next.z - plane.z));
     const diff = wrapAngle(bearing - plane.heading);

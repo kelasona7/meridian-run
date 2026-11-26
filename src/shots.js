@@ -72,9 +72,10 @@ function fly(plane, world, seconds, steer, stopWhen) {
  * flight: mid-course after 24 s of real flying — banked in the turn toward
  * ring 2, the lighthouse headland in view. ring: through ring 1, lined up
  * close on ring 2. runway: on final approach to runway 36. start: title.
+ * The staged mission is `rings` unless the caller names another one.
  */
-export function stageShot(name, world, plane) {
-  plane.reset();
+export function stageShot(name, world, plane, mission) {
+  plane.reset(mission || 'rings');
   world.resetRings();
   if (name === 'ring') {
     const result = fly(plane, world, 60, (p, w) => autopilot(p, w, w.nextRing(), 62), (p, w) => {

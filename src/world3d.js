@@ -11,7 +11,7 @@
 // (replacing the three one-off boats — same look, 7 fewer draw calls),
 // broadleaf trees + coastal rocks, animated Fresnel water, and instanced
 // seagulls. All placement uses fixed seeds, never Math.random().
-import { RINGS, RUNWAY, WORLD } from './config.js';
+import { RINGS, RUNWAY, TOUCHDOWN_ZONE, WORLD } from './config.js';
 import { createRandom } from './random.js';
 
 // Golden-hour sun: low from the east-north-east, warm light, long glitter
@@ -873,17 +873,35 @@ export function createWorld3d(world) {
     );
     far.position.set(0, 0.7, -length / 2 + 6);
     rwy.add(far);
+    // The gold touchdown zone for precision landing: a painted box on the
+    // deck, 24 m wide and 200 m long, centred 300 m past the threshold.
+    // Local z is measured from the runway centre, so subtract it.
+    const zone = new THREE.Mesh(
+      new THREE.PlaneGeometry(TOUCHDOWN_ZONE.halfWidth * 2, TOUCHDOWN_ZONE.halfLength * 2),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, toneMapped: false }),
+    );
+    zone.rotation.x = -Math.PI / 2;
+    zone.position.set(TOUCHDOWN_ZONE.x, 0.12, TOUCHDOWN_ZONE.z - (RUNWAY.zStart + RUNWAY.zEnd) / 2);
+    rwy.add(zone);
+    const zoneBorder = new THREE.Mesh(
+      new THREE.PlaneGeometry(TOUCHDOWN_ZONE.halfWidth * 2 + 3, TOUCHDOWN_ZONE.halfLength * 2 + 3),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+    );
+    zoneBorder.rotation.x = -Math.PI / 2;
+    zoneBorder.position.set(TOUCHDOWN_ZONE.x, 0.1, TOUCHDOWN_ZONE.z - (RUNWAY.zStart + RUNWAY.zEnd) / 2);
+    rwy.add(zoneBorder);
     group.add(rwy);
   }
 
   return {
     group,
-    update(dt, time, worldState) {
+    update(dt, time, worldState, mission) {
       // Rings: gold for the next one (pulsing), green when done, cyan after.
+      // Precision landing has no rings, so none of them pulse gold there.
       for (let i = 0; i < ringMeshes.length; i += 1) {
         const mesh = ringMeshes[i];
         const passed = worldState.rings[i].passed;
-        const isNext = i === worldState.ringIndex;
+        const isNext = mission !== 'precision' && i === worldState.ringIndex;
         if (passed) {
           if (mesh.material !== doneMat) mesh.material = doneMat;
           mesh.scale.setScalar(1);
